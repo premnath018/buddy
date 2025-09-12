@@ -30,7 +30,6 @@ class NotesService {
       });
       return notes;
     } catch (error) {
-      console.error("Failed to fetch notes:", error);
       return null;
     }
   }
@@ -65,9 +64,7 @@ class NotesService {
           shareSlug: generateSlug(noteData.title),
         },
       });
-      console.log(data);
     } catch (error) {
-      console.log(error);
       return null;
     }
   }
@@ -116,7 +113,12 @@ class NotesService {
     }
   }
 
-  async getNoteBySlug(slug: string, userId: number): Promise<Note | null> {
+  async getNoteBySlug(
+    slug: string,
+    userId: number
+  ): Promise<
+    (Note & { ownerInfo: { username: string; email: string } }) | null
+  > {
     try {
       const note = await prisma.note.findUnique({
         where: {
@@ -126,6 +128,13 @@ class NotesService {
           NoteShare: {
             where: {
               userId,
+            },
+          },
+          author: {
+            select: {
+              id: true,
+              username: true,
+              email: true,
             },
           },
         },
@@ -138,12 +147,19 @@ class NotesService {
       const hasAccess = note.NoteShare.length > 0;
 
       if (isAuthor || isPublic || hasAccess) {
-        return note;
+        const ownerInfo = {
+          username: note.author.username,
+          email: note.author.email,
+        };
+
+        return {
+          ...note,
+          ownerInfo,
+        };
       }
 
       return null;
     } catch (error) {
-      console.error("Error fetching note:", error);
       return null;
     }
   }
@@ -195,7 +211,6 @@ class NotesService {
 
       return mappedNotes;
     } catch (error) {
-      console.error("Failed to fetch shared notes:", error);
       return null;
     }
   }
@@ -221,7 +236,6 @@ class NotesService {
 
       return noteShare;
     } catch (error) {
-      console.error("Error sharing note:", error);
       throw error;
     }
   }
@@ -243,7 +257,6 @@ class NotesService {
 
       return shares.map((share) => share.user);
     } catch (error) {
-      console.error("Error fetching shared users:", error);
       return null;
     }
   }
@@ -277,72 +290,79 @@ class NotesService {
       });
       return true;
     } catch (error) {
-      console.error("Error removing shared user:", error);
       return false;
     }
   }
 
   async getRecentNotes(userId: number): Promise<Note[] | null> {
-    const sevenDaysAgo = subDays(new Date(), 7);
+    try {
+      const sevenDaysAgo = subDays(new Date(), 7);
 
-    return (await prisma.note.findMany({
-      where: {
-        authorId: userId,
-        createdAt: {
-          gte: sevenDaysAgo,
+      return (await prisma.note.findMany({
+        where: {
+          authorId: userId,
+          createdAt: {
+            gte: sevenDaysAgo,
+          },
         },
-      },
-      orderBy: {
-        createdAt: "desc",
-      },
-      select: {
-        id: true,
-        title: true,
-        createdAt: true,
-        isPublic: true,
-      },
-    })) as Note[];
+        orderBy: {
+          createdAt: "desc",
+        },
+        select: {
+          id: true,
+          title: true,
+          createdAt: true,
+          isPublic: true,
+        },
+      })) as Note[];
+    } catch (error) {
+      return null;
+    }
   }
 
   async getRecentlySharedNotes(
     userId: number
   ): Promise<RecentlySharedNote[] | null> {
-    const shares = await prisma.noteShare.findMany({
-      where: { userId },
-      orderBy: { createdAt: "desc" },
-      select: {
-        createdAt: true,
-        access: true,
-        note: {
-          select: {
-            id: true,
-            title: true,
-            author: {
-              select: {
-                username: true,
-                email: true,
+    try {
+      const shares = await prisma.noteShare.findMany({
+        where: { userId },
+        orderBy: { createdAt: "desc" },
+        select: {
+          createdAt: true,
+          access: true,
+          note: {
+            select: {
+              id: true,
+              title: true,
+              author: {
+                select: {
+                  username: true,
+                  email: true,
+                },
               },
             },
           },
-        },
-        user: {
-          select: {
-            email: true,
+          user: {
+            select: {
+              email: true,
+            },
           },
         },
-      },
-    });
+      });
 
-    if (!shares.length) return null;
+      if (!shares.length) return null;
 
-    return shares.map((share) => ({
-      id: share.note.id,
-      title: share.note.title,
-      sharedBy: share.note.author.username,
-      sharedWith: share.user.email,
-      sharedDate: share.createdAt.toISOString(),
-      access: share.access,
-    }));
+      return shares.map((share) => ({
+        id: share.note.id,
+        title: share.note.title,
+        sharedBy: share.note.author.username,
+        sharedWith: share.user.email,
+        sharedDate: share.createdAt.toISOString(),
+        access: share.access,
+      }));
+    } catch (error) {
+      return null;
+    }
   }
 }
 
